@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+  <title>Payslip Portal – Dashboard</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="dashboard-page">
+
+  <!-- Top bar -->
+  <header class="topbar">
+    <div class="logo">
+      <span class="logo-icon">💼</span>
+      <span class="logo-text">Payslip <strong>Portal</strong></span>
+    </div>
+    <div class="topbar-right">
+      <span id="welcomeText" class="welcome-text"></span>
+      <button class="btn-logout" id="logoutBtn">Logout</button>
+    </div>
+  </header>
+
+  <main class="dashboard-wrapper">
+
+    <!-- ── Employee view ─────────────────────────────────────────────────── -->
+    <section id="employeeView">
+      <div class="card dashboard-card">
+        <h2>Download Your Payslip</h2>
+        <p class="subtitle">Select the month and year to get your payslip</p>
+
+        <div class="selector-row">
+          <div class="field">
+            <label for="monthSelect">Month</label>
+            <select id="monthSelect">
+              <option value="">Month</option>
+              <option value="01">January</option>
+              <option value="02">February</option>
+              <option value="03">March</option>
+              <option value="04">April</option>
+              <option value="05">May</option>
+              <option value="06">June</option>
+              <option value="07">July</option>
+              <option value="08">August</option>
+              <option value="09">September</option>
+              <option value="10">October</option>
+              <option value="11">November</option>
+              <option value="12">December</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="yearSelect">Year</label>
+            <select id="yearSelect">
+              <option value="">Year</option>
+            </select>
+          </div>
+
+          <div class="field check-btn-wrap">
+            <label class="sr-only">&nbsp;</label>
+            <button class="btn-primary" id="checkBtn">Check</button>
+          </div>
+        </div>
+
+        <div id="checkMsg" class="hidden"></div>
+
+        <div id="downloadSection" class="download-section hidden">
+          <div class="download-card">
+            <div class="download-top">
+              <div class="download-icon">📄</div>
+              <div class="download-info">
+                <strong id="downloadLabel">Payslip</strong>
+                <span>PDF Document</span>
+              </div>
+            </div>
+            <div class="action-btns">
+              <a id="viewBtn" class="btn-view" href="#" target="_blank" rel="noopener">
+                👁 View
+              </a>
+              <a id="downloadBtn" class="btn-download" href="#" download>
+                ⬇ Download
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Admin view ─────────────────────────────────────────────────────── -->
+    <section id="adminView" class="hidden">
+      <div class="card dashboard-card">
+        <h2>Upload Payslip</h2>
+        <p class="subtitle">Upload a PDF payslip for a specific month and year</p>
+
+        <form id="uploadForm" novalidate>
+          <div class="selector-row">
+            <div class="field">
+              <label for="uploadMonth">Month</label>
+              <select id="uploadMonth" required>
+                <option value="">Month</option>
+                <option value="01">January</option>
+                <option value="02">February</option>
+                <option value="03">March</option>
+                <option value="04">April</option>
+                <option value="05">May</option>
+                <option value="06">June</option>
+                <option value="07">July</option>
+                <option value="08">August</option>
+                <option value="09">September</option>
+                <option value="10">October</option>
+                <option value="11">November</option>
+                <option value="12">December</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="uploadYear">Year</label>
+              <select id="uploadYear" required>
+                <option value="">Year</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="field upload-field">
+            <label for="pdfFile">PDF File</label>
+            <div class="file-drop-zone" id="dropZone">
+              <input type="file" id="pdfFile" accept=".pdf" required />
+              <div class="drop-label">
+                <span class="drop-icon">📁</span>
+                <span id="fileLabel">Tap to choose a PDF file</span>
+              </div>
+            </div>
+          </div>
+
+          <div id="uploadMsg" class="hidden"></div>
+
+          <button type="submit" class="btn-primary" id="uploadBtn">Upload Payslip</button>
+        </form>
+      </div>
+
+      <!-- Uploaded payslips list -->
+      <div class="card dashboard-card" style="margin-top:20px">
+        <h2>Uploaded Payslips</h2>
+        <div id="payslipList">
+          <p class="loading-text">Loading...</p>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="dashboard.js"></script>
+</body>
+</html>

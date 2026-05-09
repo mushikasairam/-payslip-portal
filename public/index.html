@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+  <title>Payslip Portal – Login</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="login-page">
+
+  <!-- Background shapes -->
+  <div class="bg-shape left"></div>
+  <div class="bg-shape right"></div>
+
+  <!-- Top bar -->
+  <header class="topbar">
+    <div class="logo">
+      <span class="logo-icon">💼</span>
+      <span class="logo-text">Payslip <strong>Portal</strong></span>
+    </div>
+  </header>
+
+  <!-- Login card -->
+  <main class="login-wrapper">
+    <div class="card">
+      <h1>Access your payslips</h1>
+      <p class="subtitle">Enter your credentials to continue</p>
+
+      <form id="loginForm" novalidate>
+        <div class="field">
+          <label for="email">Email Address</label>
+          <input type="email" id="email" placeholder="Enter your email address" autocomplete="email" required />
+        </div>
+
+        <div class="field">
+          <label for="password">Password</label>
+          <input type="password" id="password" placeholder="Enter your password" autocomplete="current-password" required />
+        </div>
+
+        <div id="errorMsg" class="error-msg hidden"></div>
+
+        <button type="submit" class="btn-primary" id="loginBtn">
+          <span id="loginBtnText">Login</span>
+          <span id="loginSpinner" class="spinner hidden"></span>
+        </button>
+      </form>
+    </div>
+  </main>
+
+  <script src="login.js"></script>
+</body>
+</html>
