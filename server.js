@@ -1,46 +1,53 @@
 const express = require('express');
 const session = require('express-session');
-const multer = require('multer');
-const bcrypt = require('bcryptjs');
-const path = require('path');
-const fs = require('fs');
+const multer  = require('multer');
+const bcrypt  = require('bcryptjs');
+const path    = require('path');
+const cloudinary = require('cloudinary').v2;
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
 
-const app = express();
-const PORT = 3000;
+const app  = express();
+const PORT = process.env.PORT || 3000;
 
-// ─── Ensure uploads folder exists ───────────────────────────────────────────
-const UPLOADS_DIR = path.join(__dirname, 'uploads');
-if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR);
+// ─── Cloudinary config (set these as env vars on Render) ─────────────────────
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key:    process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
 
-// ─── In-memory user store (change credentials here) ─────────────────────────
-// Format: { email: { passwordHash, name } }
-// To add more users, duplicate an entry below.
+// ─── Users ────────────────────────────────────────────────────────────────────
 const USERS = {
   'mushikasairam16@gmail.com': {
     name: 'Mushika Sairam',
-    // password: Phaniram@416
     passwordHash: bcrypt.hashSync('Phaniram@416', 10)
   }
 };
 
-// Admin credentials (for uploading PDFs)
 const ADMIN = {
   email: 'admin@company.com',
-  // password: admin123
   passwordHash: bcrypt.hashSync('admin123', 10)
 };
 
-// ─── Multer storage: saves as YYYY-MM.pdf ────────────────────────────────────
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, UPLOADS_DIR),
-  filename: (req, file, cb) => {
-    const { year, month } = req.body;
-    cb(null, `${year}-${String(month).padStart(2, '0')}.pdf`);
+// ─── Multer → Cloudinary storage ─────────────────────────────────────────────
+// Files are stored in Cloudinary folder "payslips" with public_id = YYYY-MM
+const cloudStorage = new CloudinaryStorage({
+  cloudinary,
+  params: (req) => {
+    const year  = req.body.year;
+    const month = String(req.body.month).padStart(2, '0');
+    return {
+      folder:        'payslips',
+      public_id:     `${year}-${month}`,
+      resource_type: 'raw',   // required for PDFs
+      format:        'pdf'
+    };
   }
 });
+
 const upload = multer({
-  storage,
-  fileFilter: (req, file, cb) => {
+  storage: cloudStorage,
+  fileFilter: (_req, file, cb) => {
     if (file.mimetype === 'application/pdf') cb(null, true);
     else cb(new Error('Only PDF files are allowed'));
   }
@@ -50,10 +57,10 @@ const upload = multer({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(session({
-  secret: 'payslip-secret-key-change-in-production',
+  secret: process.env.SESSION_SECRET || 'payslip-secret-key',
   resave: false,
   saveUninitialized: false,
-  cookie: { maxAge: 2 * 60 * 60 * 1000 } // 2 hours
+  cookie: { maxAge: 2 * 60 * 60 * 1000 }
 }));
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -67,6 +74,11 @@ function requireAdmin(req, res, next) {
   res.status(403).json({ error: 'Admin access required' });
 }
 
+// ─── Helper: build Cloudinary public_id ──────────────────────────────────────
+function publicId(year, month) {
+  return `payslips/${year}-${String(month).padStart(2, '0')}`;
+}
+
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
 // Login
@@ -74,14 +86,12 @@ app.post('/api/login', (req, res) => {
   const { email, password } = req.body;
   const emailLower = (email || '').toLowerCase().trim();
 
-  // Check admin
   if (emailLower === ADMIN.email && bcrypt.compareSync(password, ADMIN.passwordHash)) {
     req.session.isAdmin = true;
     req.session.user = { email: ADMIN.email, name: 'Admin' };
     return res.json({ success: true, role: 'admin' });
   }
 
-  // Check employee
   const user = USERS[emailLower];
   if (user && bcrypt.compareSync(password, user.passwordHash)) {
     req.session.user = { email: emailLower, name: user.name };
@@ -97,78 +107,103 @@ app.post('/api/logout', (req, res) => {
   res.json({ success: true });
 });
 
-// Get current session info
+// Session info
 app.get('/api/me', requireLogin, (req, res) => {
   res.json({ user: req.session.user, isAdmin: !!req.session.isAdmin });
 });
 
-// Check if a payslip exists for a given month/year
-app.get('/api/payslip/check', requireLogin, (req, res) => {
+// Check if payslip exists
+app.get('/api/payslip/check', requireLogin, async (req, res) => {
   const { year, month } = req.query;
   if (!year || !month) return res.status(400).json({ error: 'year and month required' });
-  const filename = `${year}-${String(month).padStart(2, '0')}.pdf`;
-  const exists = fs.existsSync(path.join(UPLOADS_DIR, filename));
-  res.json({ exists, filename });
+  try {
+    await cloudinary.api.resource(publicId(year, month), { resource_type: 'raw' });
+    res.json({ exists: true });
+  } catch {
+    res.json({ exists: false });
+  }
 });
 
-// View payslip inline (opens in browser)
-app.get('/api/payslip/view', requireLogin, (req, res) => {
+// View payslip inline (proxy from Cloudinary)
+app.get('/api/payslip/view', requireLogin, async (req, res) => {
   const { year, month } = req.query;
   if (!year || !month) return res.status(400).json({ error: 'year and month required' });
-  const filename = `${year}-${String(month).padStart(2, '0')}.pdf`;
-  const filePath = path.join(UPLOADS_DIR, filename);
-  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Payslip not found' });
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `inline; filename="Payslip-${year}-${String(month).padStart(2, '0')}.pdf"`);
-  fs.createReadStream(filePath).pipe(res);
+  try {
+    const result = await cloudinary.api.resource(publicId(year, month), { resource_type: 'raw' });
+    // Generate a signed URL valid for 1 hour
+    const url = cloudinary.utils.private_download_url(
+      publicId(year, month), 'pdf',
+      { resource_type: 'raw', expires_at: Math.floor(Date.now() / 1000) + 3600, attachment: false }
+    );
+    res.redirect(url);
+  } catch {
+    res.status(404).json({ error: 'Payslip not found' });
+  }
 });
 
-// Download payslip
-app.get('/api/payslip/download', requireLogin, (req, res) => {
+// Download payslip (attachment)
+app.get('/api/payslip/download', requireLogin, async (req, res) => {
   const { year, month } = req.query;
   if (!year || !month) return res.status(400).json({ error: 'year and month required' });
-  const filename = `${year}-${String(month).padStart(2, '0')}.pdf`;
-  const filePath = path.join(UPLOADS_DIR, filename);
-  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Payslip not found' });
-  res.download(filePath, `Payslip-${year}-${String(month).padStart(2, '0')}.pdf`);
+  try {
+    await cloudinary.api.resource(publicId(year, month), { resource_type: 'raw' });
+    const url = cloudinary.utils.private_download_url(
+      publicId(year, month), 'pdf',
+      { resource_type: 'raw', expires_at: Math.floor(Date.now() / 1000) + 3600, attachment: true }
+    );
+    res.redirect(url);
+  } catch {
+    res.status(404).json({ error: 'Payslip not found' });
+  }
 });
 
-// Admin: upload payslip
+// Admin: upload payslip to Cloudinary
 app.post('/api/admin/upload', requireAdmin, upload.single('pdf'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
   res.json({ success: true, message: `Payslip for ${req.body.year}-${req.body.month} uploaded successfully` });
 });
 
-// Admin: list uploaded payslips
-app.get('/api/admin/list', requireAdmin, (req, res) => {
-  const files = fs.readdirSync(UPLOADS_DIR)
-    .filter(f => f.endsWith('.pdf'))
-    .map(f => {
-      const [year, monthExt] = f.split('-');
-      const month = monthExt.replace('.pdf', '');
-      return { filename: f, year, month };
-    })
-    .sort((a, b) => b.filename.localeCompare(a.filename));
-  res.json({ files });
+// Admin: list all payslips from Cloudinary
+app.get('/api/admin/list', requireAdmin, async (req, res) => {
+  try {
+    const result = await cloudinary.api.resources({
+      type:          'upload',
+      resource_type: 'raw',
+      prefix:        'payslips/',
+      max_results:   100
+    });
+    const files = result.resources
+      .map(r => {
+        const name = r.public_id.replace('payslips/', ''); // YYYY-MM
+        const [year, month] = name.split('-');
+        return { filename: `${name}.pdf`, year, month };
+      })
+      .sort((a, b) => b.filename.localeCompare(a.filename));
+    res.json({ files });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to list payslips', detail: err.message });
+  }
 });
 
-// Admin: delete a payslip
-app.delete('/api/admin/delete/:filename', requireAdmin, (req, res) => {
+// Admin: delete a payslip from Cloudinary
+app.delete('/api/admin/delete/:filename', requireAdmin, async (req, res) => {
   const filename = req.params.filename;
-  // Sanitize: only allow YYYY-MM.pdf pattern
   if (!/^\d{4}-\d{2}\.pdf$/.test(filename)) {
     return res.status(400).json({ error: 'Invalid filename' });
   }
-  const filePath = path.join(UPLOADS_DIR, filename);
-  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
-  fs.unlinkSync(filePath);
-  res.json({ success: true });
+  const name = filename.replace('.pdf', ''); // YYYY-MM
+  try {
+    await cloudinary.uploader.destroy(`payslips/${name}`, { resource_type: 'raw' });
+    res.json({ success: true });
+  } catch {
+    res.status(500).json({ error: 'Delete failed' });
+  }
 });
 
-// ─── Start server ─────────────────────────────────────────────────────────────
+// ─── Start ────────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`\n✅ Payslip Portal running at http://localhost:${PORT}`);
-  console.log(`\n📋 Default credentials:`);
-  console.log(`   Employee → employee@company.com / employee123`);
-  console.log(`   Admin    → admin@company.com    / admin123\n`);
+  console.log(`\n📋 Credentials:`);
+  console.log(`   Employee → mushikasairam16@gmail.com / Phaniram@416`);
+  console.log(`   Admin    → admin@company.com / admin123\n`);
 });
