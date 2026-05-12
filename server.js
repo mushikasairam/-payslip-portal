@@ -134,7 +134,14 @@ app.get('/api/payslip/view', requireLogin, async (req, res) => {
   if (!year || !month) return res.status(400).json({ error: 'year and month required' });
   const r = await findResource(year, month);
   if (!r) return res.status(404).json({ error: 'Payslip not found' });
-  res.redirect(r.secure_url);
+  // Generate signed URL valid for 1 hour
+  const signedUrl = cloudinary.url(r.public_id, {
+    resource_type: 'raw',
+    type: 'upload',
+    sign_url: true,
+    expires_at: Math.floor(Date.now() / 1000) + 3600
+  });
+  res.redirect(signedUrl);
 });
 
 // Download payslip (attachment)
@@ -143,7 +150,15 @@ app.get('/api/payslip/download', requireLogin, async (req, res) => {
   if (!year || !month) return res.status(400).json({ error: 'year and month required' });
   const r = await findResource(year, month);
   if (!r) return res.status(404).json({ error: 'Payslip not found' });
-  res.redirect(r.secure_url);
+  // Generate signed URL valid for 1 hour
+  const signedUrl = cloudinary.url(r.public_id, {
+    resource_type: 'raw',
+    type: 'upload',
+    sign_url: true,
+    expires_at: Math.floor(Date.now() / 1000) + 3600,
+    flags: 'attachment'
+  });
+  res.redirect(signedUrl);
 });
 
 // Admin: upload payslip to Cloudinary
