@@ -131,12 +131,7 @@ app.get('/api/payslip/view', requireLogin, async (req, res) => {
   if (!year || !month) return res.status(400).json({ error: 'year and month required' });
   try {
     const result = await cloudinary.api.resource(publicId(year, month), { resource_type: 'raw' });
-    // Generate a signed URL valid for 1 hour
-    const url = cloudinary.utils.private_download_url(
-      publicId(year, month), 'pdf',
-      { resource_type: 'raw', expires_at: Math.floor(Date.now() / 1000) + 3600, attachment: false }
-    );
-    res.redirect(url);
+    res.redirect(result.secure_url);
   } catch {
     res.status(404).json({ error: 'Payslip not found' });
   }
@@ -147,12 +142,8 @@ app.get('/api/payslip/download', requireLogin, async (req, res) => {
   const { year, month } = req.query;
   if (!year || !month) return res.status(400).json({ error: 'year and month required' });
   try {
-    await cloudinary.api.resource(publicId(year, month), { resource_type: 'raw' });
-    const url = cloudinary.utils.private_download_url(
-      publicId(year, month), 'pdf',
-      { resource_type: 'raw', expires_at: Math.floor(Date.now() / 1000) + 3600, attachment: true }
-    );
-    res.redirect(url);
+    const result = await cloudinary.api.resource(publicId(year, month), { resource_type: 'raw' });
+    res.redirect(result.secure_url);
   } catch {
     res.status(404).json({ error: 'Payslip not found' });
   }
