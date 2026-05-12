@@ -38,9 +38,9 @@ const cloudStorage = new CloudinaryStorage({
     const month = String(req.body.month).padStart(2, '0');
     return {
       folder:        'payslips',
-      public_id:     `${year}-${month}`,
-      resource_type: 'raw',   // required for PDFs
-      format:        'pdf'
+      public_id:     `${year}-${month}.pdf`,
+      resource_type: 'raw'
+      // No format field — prevents double extension
     };
   }
 });
