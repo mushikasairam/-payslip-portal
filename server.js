@@ -3,14 +3,18 @@ const session = require('express-session');
 const multer  = require('multer');
 const bcrypt  = require('bcryptjs');
 const path    = require('path');
-const fs      = require('fs');
+const cloudinary = require('cloudinary').v2;
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
-// ─── Uploads directory (use /opt/render/project/uploads on Render disk) ───────
-const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, 'uploads');
-if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+// ─── Cloudinary config ────────────────────────────────────────────────────────
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key:    process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
 
 // ─── Users ────────────────────────────────────────────────────────────────────
 const USERS = {
@@ -25,22 +29,28 @@ const ADMIN = {
   passwordHash: bcrypt.hashSync('admin123', 10)
 };
 
-// ─── Multer local storage ─────────────────────────────────────────────────────
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
-  filename: (req, _file, cb) => {
+// ─── Multer → Cloudinary ──────────────────────────────────────────────────────
+const cloudStorage = new CloudinaryStorage({
+  cloudinary,
+  params: (req) => {
     const year  = req.body.year;
     const month = String(req.body.month).padStart(2, '0');
-    cb(null, `${year}-${month}.pdf`);
+    return {
+      folder:        'payslips',
+      public_id:     `${year}-${month}.pdf`,
+      resource_type: 'raw',
+      type:          'upload',
+      access_mode:   'public'
+    };
   }
 });
+
 const upload = multer({
-  storage,
+  storage: cloudStorage,
   fileFilter: (_req, file, cb) => {
     if (file.mimetype === 'application/pdf') cb(null, true);
     else cb(new Error('Only PDF files are allowed'));
-  },
-  limits: { fileSize: 20 * 1024 * 1024 } // 20MB
+  }
 });
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
@@ -64,106 +74,154 @@ function requireAdmin(req, res, next) {
   res.status(403).json({ error: 'Admin access required' });
 }
 
+// ─── Find resource (tries both public_id formats) ─────────────────────────────
+async function findResource(year, month) {
+  const mm  = String(month).padStart(2, '0');
+  const ids = [`payslips/${year}-${mm}.pdf`, `payslips/${year}-${mm}`];
+  for (const id of ids) {
+    try {
+      const r = await cloudinary.api.resource(id, { resource_type: 'raw' });
+      return r;
+    } catch { /* try next */ }
+  }
+  return null;
+}
+
+// ─── Proxy PDF through server (avoids CORS/auth issues) ──────────────────────
+function proxyPdf(url, filename, inline, res) {
+  const https = require('https');
+  const disposition = inline
+    ? `inline; filename="${filename}"`
+    : `attachment; filename="${filename}"`;
+
+  const req = https.get(url, (stream) => {
+    if (stream.statusCode === 401 || stream.statusCode === 403) {
+      // Try with API auth header
+      return res.status(403).send('File access denied. Please delete and re-upload this payslip from admin panel.');
+    }
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', disposition);
+    stream.pipe(res);
+  });
+  req.on('error', (e) => res.status(500).send('Error: ' + e.message));
+}
+
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
-// Login
 app.post('/api/login', (req, res) => {
   const { email, password } = req.body;
   const emailLower = (email || '').toLowerCase().trim();
-
   if (emailLower === ADMIN.email && bcrypt.compareSync(password, ADMIN.passwordHash)) {
     req.session.isAdmin = true;
     req.session.user = { email: ADMIN.email, name: 'Admin' };
     return res.json({ success: true, role: 'admin' });
   }
-
   const user = USERS[emailLower];
   if (user && bcrypt.compareSync(password, user.passwordHash)) {
     req.session.user = { email: emailLower, name: user.name };
     return res.json({ success: true, role: 'employee' });
   }
-
   res.status(401).json({ error: 'Invalid email or password' });
 });
 
-// Logout
 app.post('/api/logout', (req, res) => {
   req.session.destroy();
   res.json({ success: true });
 });
 
-// Session info
 app.get('/api/me', requireLogin, (req, res) => {
   res.json({ user: req.session.user, isAdmin: !!req.session.isAdmin });
 });
 
-// Check if payslip exists
-app.get('/api/payslip/check', requireLogin, (req, res) => {
+app.get('/api/payslip/check', requireLogin, async (req, res) => {
   const { year, month } = req.query;
   if (!year || !month) return res.status(400).json({ error: 'year and month required' });
-  const filename = `${year}-${String(month).padStart(2, '0')}.pdf`;
-  const exists = fs.existsSync(path.join(UPLOADS_DIR, filename));
-  res.json({ exists });
+  const r = await findResource(year, month);
+  res.json({ exists: !!r });
 });
 
-// View payslip inline
-app.get('/api/payslip/view', requireLogin, (req, res) => {
+app.get('/api/payslip/view', requireLogin, async (req, res) => {
   const { year, month } = req.query;
   if (!year || !month) return res.status(400).json({ error: 'year and month required' });
-  const filename = `${year}-${String(month).padStart(2, '0')}.pdf`;
-  const filePath = path.join(UPLOADS_DIR, filename);
-  if (!fs.existsSync(filePath)) return res.status(404).send('Payslip not found');
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
-  fs.createReadStream(filePath).pipe(res);
+  const r = await findResource(year, month);
+  if (!r) return res.status(404).send('Payslip not found');
+  const mm = String(month).padStart(2, '0');
+  proxyPdf(r.secure_url, `Payslip-${year}-${mm}.pdf`, true, res);
 });
 
-// Download payslip
-app.get('/api/payslip/download', requireLogin, (req, res) => {
+app.get('/api/payslip/download', requireLogin, async (req, res) => {
   const { year, month } = req.query;
   if (!year || !month) return res.status(400).json({ error: 'year and month required' });
-  const filename = `${year}-${String(month).padStart(2, '0')}.pdf`;
-  const filePath = path.join(UPLOADS_DIR, filename);
-  if (!fs.existsSync(filePath)) return res.status(404).send('Payslip not found');
-  res.download(filePath, `Payslip-${year}-${String(month).padStart(2, '0')}.pdf`);
+  const r = await findResource(year, month);
+  if (!r) return res.status(404).send('Payslip not found');
+  const mm = String(month).padStart(2, '0');
+  proxyPdf(r.secure_url, `Payslip-${year}-${mm}.pdf`, false, res);
 });
 
-// Admin: upload
 app.post('/api/admin/upload', requireAdmin, upload.single('pdf'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
   res.json({ success: true, message: `Payslip for ${req.body.year}-${req.body.month} uploaded successfully` });
 });
 
-// Admin: list
-app.get('/api/admin/list', requireAdmin, (req, res) => {
-  const files = fs.readdirSync(UPLOADS_DIR)
-    .filter(f => /^\d{4}-\d{2}\.pdf$/.test(f))
-    .map(f => {
-      const [year, monthExt] = f.split('-');
-      const month = monthExt.replace('.pdf', '');
-      return { filename: f, year, month };
+app.get('/api/admin/list', requireAdmin, async (req, res) => {
+  try {
+    const result = await cloudinary.api.resources({
+      type: 'upload', resource_type: 'raw',
+      prefix: 'payslips/', max_results: 100
+    });
+    const files = result.resources.map(r => {
+      const raw  = r.public_id.replace('payslips/', '');
+      const name = raw.replace(/\.pdf$/, '');
+      const parts = name.split('-');
+      const year  = parts[0];
+      const month = parts[1];
+      return { filename: `${name}.pdf`, year, month };
     })
+    .filter(f => f.year && f.month)
     .sort((a, b) => b.filename.localeCompare(a.filename));
-  res.json({ files });
+    res.json({ files });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to list', detail: err.message });
+  }
 });
 
-// Admin: delete
-app.delete('/api/admin/delete/:filename', requireAdmin, (req, res) => {
+app.delete('/api/admin/delete/:filename', requireAdmin, async (req, res) => {
   const filename = req.params.filename;
-  if (!/^\d{4}-\d{2}\.pdf$/.test(filename)) {
+  if (!/^\d{4}-\d{2}(\.pdf)?\.pdf$|^\d{4}-\d{2}\.pdf$/.test(filename)) {
     return res.status(400).json({ error: 'Invalid filename' });
   }
-  const filePath = path.join(UPLOADS_DIR, filename);
-  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
-  fs.unlinkSync(filePath);
-  res.json({ success: true });
+  const name = filename.replace(/\.pdf\.pdf$/, '.pdf').replace(/\.pdf$/, '');
+  try {
+    await cloudinary.uploader.destroy(`payslips/${name}.pdf`, { resource_type: 'raw' });
+    res.json({ success: true });
+  } catch {
+    try {
+      await cloudinary.uploader.destroy(`payslips/${name}`, { resource_type: 'raw' });
+      res.json({ success: true });
+    } catch (e) {
+      res.status(500).json({ error: 'Delete failed', detail: e.message });
+    }
+  }
 });
 
-// ─── Start ────────────────────────────────────────────────────────────────────
+// Debug route
+app.get('/api/admin/debug', requireAdmin, async (req, res) => {
+  try {
+    const result = await cloudinary.api.resources({
+      type: 'upload', resource_type: 'raw',
+      prefix: 'payslips/', max_results: 10
+    });
+    res.json(result.resources.map(r => ({
+      public_id:   r.public_id,
+      access_mode: r.access_mode,
+      type:        r.type,
+      url:         r.secure_url
+    })));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.listen(PORT, () => {
-  console.log(`\n✅ Payslip Portal running at http://localhost:${PORT}`);
-  console.log(`   Uploads dir: ${UPLOADS_DIR}`);
-  console.log(`\n📋 Credentials:`);
-  console.log(`   Employee → mushikasairam16@gmail.com / Phaniram@416`);
-  console.log(`   Admin    → admin@company.com / admin123\n`);
+  console.log(`\n✅ Payslip Portal running at http://localhost:${PORT}\n`);
 });
