@@ -201,6 +201,19 @@ app.delete('/api/admin/delete/:filename', requireAdmin, async (req, res) => {
   }
 });
 
+// Debug: list raw Cloudinary resources (admin only)
+app.get('/api/admin/debug', requireAdmin, async (req, res) => {
+  try {
+    const result = await cloudinary.api.resources({
+      type: 'upload', resource_type: 'raw',
+      prefix: 'payslips/', max_results: 10
+    });
+    res.json(result.resources.map(r => ({ public_id: r.public_id, format: r.format, url: r.secure_url })));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── Start ────────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`\n✅ Payslip Portal running at http://localhost:${PORT}`);
