@@ -75,8 +75,9 @@ function requireAdmin(req, res, next) {
 }
 
 // ─── Helper: build Cloudinary public_id ──────────────────────────────────────
+// Cloudinary stores raw files with format appended, so public_id = YYYY-MM.pdf
 function publicId(year, month) {
-  return `payslips/${year}-${String(month).padStart(2, '0')}`;
+  return `payslips/${year}-${String(month).padStart(2, '0')}.pdf`;
 }
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
@@ -193,7 +194,7 @@ app.delete('/api/admin/delete/:filename', requireAdmin, async (req, res) => {
   }
   const name = filename.replace('.pdf', ''); // YYYY-MM
   try {
-    await cloudinary.uploader.destroy(`payslips/${name}`, { resource_type: 'raw' });
+    await cloudinary.uploader.destroy(`payslips/${name}.pdf`, { resource_type: 'raw' });
     res.json({ success: true });
   } catch {
     res.status(500).json({ error: 'Delete failed' });
