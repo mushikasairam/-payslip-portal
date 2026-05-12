@@ -20,7 +20,19 @@ cloudinary.config({
 const USERS = {
   'mushikasairam16@gmail.com': {
     name: 'Mushika Sairam',
-    passwordHash: bcrypt.hashSync('Phaniram@416', 10)
+    passwordHash: bcrypt.hashSync('Phaniram@416', 10),
+    profile: {
+      employeeCode: 'E052',
+      designation:  'Developer',
+      department:   'Tech',
+      dateOfBirth:  '16/02/2000',
+      pan:          'HTBPM0436F',
+      uan:          '102006867687',
+      esic:         '5222422004',
+      accountNo:    '1638104000042769',
+      ifsc:         'IBKL0001638',
+      dateOfJoining:'6/04/2026'
+    }
   }
 };
 
@@ -131,6 +143,13 @@ app.post('/api/logout', (req, res) => {
 
 app.get('/api/me', requireLogin, (req, res) => {
   res.json({ user: req.session.user, isAdmin: !!req.session.isAdmin });
+});
+
+// Get employee profile
+app.get('/api/profile', requireLogin, (req, res) => {
+  const user = USERS[req.session.user.email];
+  if (!user || !user.profile) return res.json({ profile: null });
+  res.json({ profile: { name: user.name, email: req.session.user.email, ...user.profile } });
 });
 
 app.get('/api/payslip/check', requireLogin, async (req, res) => {
