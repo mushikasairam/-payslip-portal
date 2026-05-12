@@ -74,10 +74,17 @@ function requireAdmin(req, res, next) {
   res.status(403).json({ error: 'Admin access required' });
 }
 
-// ─── Helper: build Cloudinary public_id ──────────────────────────────────────
-// Cloudinary stores raw files with format appended, so public_id = YYYY-MM.pdf
-function publicId(year, month) {
-  return `payslips/${year}-${String(month).padStart(2, '0')}.pdf`;
+// ─── Helper: find actual Cloudinary resource (tries both id formats) ──────────
+async function findResource(year, month) {
+  const mm = String(month).padStart(2, '0');
+  const ids = [`payslips/${year}-${mm}.pdf`, `payslips/${year}-${mm}`];
+  for (const id of ids) {
+    try {
+      const r = await cloudinary.api.resource(id, { resource_type: 'raw' });
+      return r;
+    } catch { /* try next */ }
+  }
+  return null;
 }
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
@@ -117,36 +124,26 @@ app.get('/api/me', requireLogin, (req, res) => {
 app.get('/api/payslip/check', requireLogin, async (req, res) => {
   const { year, month } = req.query;
   if (!year || !month) return res.status(400).json({ error: 'year and month required' });
-  try {
-    await cloudinary.api.resource(publicId(year, month), { resource_type: 'raw' });
-    res.json({ exists: true });
-  } catch {
-    res.json({ exists: false });
-  }
+  const r = await findResource(year, month);
+  res.json({ exists: !!r });
 });
 
 // View payslip inline (proxy from Cloudinary)
 app.get('/api/payslip/view', requireLogin, async (req, res) => {
   const { year, month } = req.query;
   if (!year || !month) return res.status(400).json({ error: 'year and month required' });
-  try {
-    const result = await cloudinary.api.resource(publicId(year, month), { resource_type: 'raw' });
-    res.redirect(result.secure_url);
-  } catch {
-    res.status(404).json({ error: 'Payslip not found' });
-  }
+  const r = await findResource(year, month);
+  if (!r) return res.status(404).json({ error: 'Payslip not found' });
+  res.redirect(r.secure_url);
 });
 
 // Download payslip (attachment)
 app.get('/api/payslip/download', requireLogin, async (req, res) => {
   const { year, month } = req.query;
   if (!year || !month) return res.status(400).json({ error: 'year and month required' });
-  try {
-    const result = await cloudinary.api.resource(publicId(year, month), { resource_type: 'raw' });
-    res.redirect(result.secure_url);
-  } catch {
-    res.status(404).json({ error: 'Payslip not found' });
-  }
+  const r = await findResource(year, month);
+  if (!r) return res.status(404).json({ error: 'Payslip not found' });
+  res.redirect(r.secure_url);
 });
 
 // Admin: upload payslip to Cloudinary
@@ -166,10 +163,13 @@ app.get('/api/admin/list', requireAdmin, async (req, res) => {
     });
     const files = result.resources
       .map(r => {
-        const name = r.public_id.replace('payslips/', ''); // YYYY-MM
+        // public_id is like payslips/2026-04.pdf or payslips/2026-04
+        const raw  = r.public_id.replace('payslips/', '');
+        const name = raw.replace(/\.pdf$/, ''); // YYYY-MM
         const [year, month] = name.split('-');
-        return { filename: `${name}.pdf`, year, month };
+        return { filename: `${name}.pdf`, year, month, public_id: r.public_id };
       })
+      .filter(f => f.year && f.month)
       .sort((a, b) => b.filename.localeCompare(a.filename));
     res.json({ files });
   } catch (err) {
@@ -180,10 +180,12 @@ app.get('/api/admin/list', requireAdmin, async (req, res) => {
 // Admin: delete a payslip from Cloudinary
 app.delete('/api/admin/delete/:filename', requireAdmin, async (req, res) => {
   const filename = req.params.filename;
-  if (!/^\d{4}-\d{2}\.pdf$/.test(filename)) {
+  // Accept both YYYY-MM.pdf and YYYY-MM.pdf.pdf
+  if (!/^\d{4}-\d{2}(\.pdf)?\.pdf$/.test(filename)) {
     return res.status(400).json({ error: 'Invalid filename' });
   }
-  const name = filename.replace('.pdf', ''); // YYYY-MM
+  // Always use the public_id with .pdf extension
+  const name = filename.replace(/\.pdf\.pdf$/, '.pdf').replace(/\.pdf$/, '');
   try {
     await cloudinary.uploader.destroy(`payslips/${name}.pdf`, { resource_type: 'raw' });
     res.json({ success: true });
