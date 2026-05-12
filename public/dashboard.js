@@ -1,11 +1,8 @@
-const MONTHS = [
-  '', 'January','February','March','April','May','June',
-  'July','August','September','October','November','December'
-];
+const MONTHS = ['','January','February','March','April','May','June',
+  'July','August','September','October','November','December'];
 
-// ─── Init ─────────────────────────────────────────────────────────────────────
+// ── Init ──────────────────────────────────────────────────────────────────────
 (async function init() {
-  // Check session
   let me;
   try {
     const r = await fetch('/api/me');
@@ -16,15 +13,27 @@ const MONTHS = [
     return;
   }
 
-  // Set welcome text
-  document.getElementById('welcomeText').textContent = `Welcome, ${me.user.name}`;
+  // Greeting
+  const hour = new Date().getHours();
+  const greet = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  const greetEl = document.getElementById('greetingText');
+  if (greetEl) {
+    const emoji = hour < 12 ? '☀️' : hour < 17 ? '👋' : '🌙';
+    greetEl.textContent = `${greet}, ${me.user.name.split(' ')[0]} ${emoji}`;
+  }
 
-  // Populate year dropdowns
+  // User avatar & welcome
+  const name = me.user.name;
+  document.getElementById('welcomeText').textContent = name;
+  const avatarEl = document.getElementById('userAvatar');
+  if (avatarEl) avatarEl.textContent = name.charAt(0).toUpperCase();
+
+  // Year dropdowns
   const currentYear = new Date().getFullYear();
   populateYears('yearSelect', currentYear);
   populateYears('uploadYear', currentYear);
 
-  // Show correct view
+  // Show view
   if (me.isAdmin) {
     document.getElementById('adminView').classList.remove('hidden');
     document.getElementById('employeeView').classList.add('hidden');
@@ -40,19 +49,19 @@ const MONTHS = [
     window.location.href = '/';
   });
 
-  // Employee: check payslip
-  document.getElementById('checkBtn').addEventListener('click', checkPayslip);
+  // Employee check
+  document.getElementById('checkBtn')?.addEventListener('click', checkPayslip);
 
-  // Admin: upload
-  document.getElementById('uploadForm').addEventListener('submit', uploadPayslip);
+  // Admin upload
+  document.getElementById('uploadForm')?.addEventListener('submit', uploadPayslip);
 
-  // File input label update
-  document.getElementById('pdfFile').addEventListener('change', (e) => {
+  // File label
+  document.getElementById('pdfFile')?.addEventListener('change', (e) => {
     const file = e.target.files[0];
-    document.getElementById('fileLabel').textContent = file ? file.name : 'Click to choose or drag & drop a PDF';
+    document.getElementById('fileLabel').textContent = file ? file.name : 'Click or drag & drop a PDF here';
   });
 
-  // Drag & drop styling
+  // Drag & drop
   const dropZone = document.getElementById('dropZone');
   if (dropZone) {
     dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
@@ -71,19 +80,18 @@ const MONTHS = [
   }
 })();
 
-// ─── Populate year select ─────────────────────────────────────────────────────
-function populateYears(selectId, currentYear) {
-  const sel = document.getElementById(selectId);
+// ── Populate years ────────────────────────────────────────────────────────────
+function populateYears(id, current) {
+  const sel = document.getElementById(id);
   if (!sel) return;
-  for (let y = currentYear; y >= currentYear - 5; y--) {
-    const opt = document.createElement('option');
-    opt.value = y;
-    opt.textContent = y;
-    sel.appendChild(opt);
+  for (let y = current; y >= current - 5; y--) {
+    const o = document.createElement('option');
+    o.value = y; o.textContent = y;
+    sel.appendChild(o);
   }
 }
 
-// ─── Employee: check & show download ─────────────────────────────────────────
+// ── Check payslip ─────────────────────────────────────────────────────────────
 async function checkPayslip() {
   const month = document.getElementById('monthSelect').value;
   const year  = document.getElementById('yearSelect').value;
@@ -100,7 +108,7 @@ async function checkPayslip() {
 
   const btn = document.getElementById('checkBtn');
   btn.disabled = true;
-  btn.textContent = 'Checking...';
+  btn.innerHTML = `<span class="spinner"></span> Checking...`;
 
   try {
     const r    = await fetch(`/api/payslip/check?year=${year}&month=${month}`);
@@ -109,11 +117,9 @@ async function checkPayslip() {
     if (data.exists) {
       const monthName = MONTHS[parseInt(month)];
       document.getElementById('downloadLabel').textContent = `Payslip – ${monthName} ${year}`;
-      const url = `/api/payslip/download?year=${year}&month=${month}`;
-      document.getElementById('downloadBtn').href = url;
-      document.getElementById('viewBtn').href = `/api/payslip/view?year=${year}&month=${month}`;
+      document.getElementById('downloadBtn').href = `/api/payslip/download?year=${year}&month=${month}`;
+      document.getElementById('viewBtn').href     = `/api/payslip/view?year=${year}&month=${month}`;
       dlSec.classList.remove('hidden');
-      msgEl.classList.add('hidden');
     } else {
       showMsg(msgEl, `No payslip found for ${MONTHS[parseInt(month)]} ${year}.`, 'info');
     }
@@ -121,46 +127,40 @@ async function checkPayslip() {
     showMsg(msgEl, 'Error checking payslip. Please try again.', 'error');
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Check';
+    btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg> Check`;
   }
 }
 
-// ─── Admin: upload payslip ────────────────────────────────────────────────────
+// ── Upload payslip ────────────────────────────────────────────────────────────
 async function uploadPayslip(e) {
   e.preventDefault();
-  const month   = document.getElementById('uploadMonth').value;
-  const year    = document.getElementById('uploadYear').value;
-  const fileEl  = document.getElementById('pdfFile');
-  const msgEl   = document.getElementById('uploadMsg');
-  const btn     = document.getElementById('uploadBtn');
+  const month  = document.getElementById('uploadMonth').value;
+  const year   = document.getElementById('uploadYear').value;
+  const fileEl = document.getElementById('pdfFile');
+  const msgEl  = document.getElementById('uploadMsg');
+  const btn    = document.getElementById('uploadBtn');
 
   msgEl.className = 'hidden';
 
-  if (!month || !year) {
-    showMsg(msgEl, 'Please select month and year.', 'error');
-    return;
-  }
-  if (!fileEl.files[0]) {
-    showMsg(msgEl, 'Please select a PDF file.', 'error');
-    return;
-  }
+  if (!month || !year) { showMsg(msgEl, 'Please select month and year.', 'error'); return; }
+  if (!fileEl.files[0]) { showMsg(msgEl, 'Please select a PDF file.', 'error'); return; }
 
-  const formData = new FormData();
-  formData.append('month', month);
-  formData.append('year', year);
-  formData.append('pdf', fileEl.files[0]);
+  const fd = new FormData();
+  fd.append('month', month);
+  fd.append('year', year);
+  fd.append('pdf', fileEl.files[0]);
 
   btn.disabled = true;
-  btn.textContent = 'Uploading...';
+  btn.innerHTML = `<span class="spinner"></span> Uploading...`;
 
   try {
-    const r    = await fetch('/api/admin/upload', { method: 'POST', body: formData });
+    const r    = await fetch('/api/admin/upload', { method: 'POST', body: fd });
     const data = await r.json();
 
     if (r.ok && data.success) {
-      showMsg(msgEl, data.message, 'success');
+      showMsg(msgEl, `✅ ${data.message}`, 'success');
       document.getElementById('uploadForm').reset();
-      document.getElementById('fileLabel').textContent = 'Click to choose or drag & drop a PDF';
+      document.getElementById('fileLabel').textContent = 'Click or drag & drop a PDF here';
       loadPayslipList();
     } else {
       showMsg(msgEl, data.error || 'Upload failed.', 'error');
@@ -169,67 +169,56 @@ async function uploadPayslip(e) {
     showMsg(msgEl, 'Network error. Please try again.', 'error');
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Upload Payslip';
+    btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Upload Payslip`;
   }
 }
 
-// ─── Admin: load payslip list ─────────────────────────────────────────────────
+// ── Load payslip list ─────────────────────────────────────────────────────────
 async function loadPayslipList() {
   const listEl = document.getElementById('payslipList');
-  listEl.innerHTML = '<p class="loading-text">Loading...</p>';
+  listEl.innerHTML = `<div class="skeleton-list"><div class="skeleton"></div><div class="skeleton"></div></div>`;
 
   try {
     const r    = await fetch('/api/admin/list');
     const data = await r.json();
 
     if (!data.files || data.files.length === 0) {
-      listEl.innerHTML = '<div class="empty-state">No payslips uploaded yet.</div>';
+      listEl.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📂</div><p>No payslips uploaded yet.</p></div>`;
       return;
     }
 
-    // Mobile card list
+    // Mobile cards
     const mobileList = document.createElement('div');
     mobileList.className = 'payslip-list-mobile';
 
     // Desktop table
     const table = document.createElement('table');
     table.className = 'payslip-table';
-    table.innerHTML = `
-      <thead>
-        <tr>
-          <th>Month</th>
-          <th>Year</th>
-          <th>File</th>
-          <th>Action</th>
-        </tr>
-      </thead>
-      <tbody id="payslipTableBody"></tbody>
-    `;
-    const tbody = table.querySelector('#payslipTableBody');
+    table.innerHTML = `<thead><tr><th>Month</th><th>Year</th><th>File</th><th>Action</th></tr></thead><tbody id="ptbody"></tbody>`;
+    const tbody = table.querySelector('#ptbody');
 
     data.files.forEach(f => {
-      const monthName = MONTHS[parseInt(f.month)];
+      const mn = MONTHS[parseInt(f.month)];
+      const shortMon = mn.slice(0,3).toUpperCase();
 
-      // Mobile card item
+      // Mobile
       const item = document.createElement('div');
       item.className = 'payslip-item';
       item.innerHTML = `
-        <div class="payslip-item-info">
-          <strong>${monthName} ${f.year}</strong>
-          <span>${f.filename}</span>
+        <div class="payslip-item-left">
+          <div class="payslip-month-badge">${shortMon}<br>${f.year}</div>
+          <div class="payslip-item-info">
+            <strong>${mn} ${f.year}</strong>
+            <span>${f.filename}</span>
+          </div>
         </div>
-        <button class="btn-delete" data-filename="${f.filename}">Delete</button>
-      `;
+        <button class="btn-delete" data-filename="${f.filename}">Delete</button>`;
       mobileList.appendChild(item);
 
-      // Desktop table row
+      // Desktop
       const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td>${monthName}</td>
-        <td>${f.year}</td>
-        <td>${f.filename}</td>
-        <td><button class="btn-delete" data-filename="${f.filename}">Delete</button></td>
-      `;
+      tr.innerHTML = `<td>${mn}</td><td>${f.year}</td><td>${f.filename}</td>
+        <td><button class="btn-delete" data-filename="${f.filename}">Delete</button></td>`;
       tbody.appendChild(tr);
     });
 
@@ -237,28 +226,23 @@ async function loadPayslipList() {
     listEl.appendChild(mobileList);
     listEl.appendChild(table);
 
-    // Delete handlers (works for both mobile & desktop buttons)
     listEl.querySelectorAll('.btn-delete').forEach(btn => {
       btn.addEventListener('click', async () => {
         if (!confirm(`Delete ${btn.dataset.filename}?`)) return;
         try {
           const r = await fetch(`/api/admin/delete/${btn.dataset.filename}`, { method: 'DELETE' });
           if (r.ok) loadPayslipList();
-        } catch {
-          alert('Delete failed.');
-        }
+        } catch { alert('Delete failed.'); }
       });
     });
 
   } catch {
-    listEl.innerHTML = '<p class="loading-text">Failed to load payslips.</p>';
+    listEl.innerHTML = `<div class="empty-state"><p>Failed to load payslips.</p></div>`;
   }
 }
 
-// ─── Helper: show message ─────────────────────────────────────────────────────
+// ── Show message ──────────────────────────────────────────────────────────────
 function showMsg(el, text, type) {
   el.textContent = text;
-  el.className = type === 'success' ? 'success-msg'
-               : type === 'info'    ? 'info-msg'
-               : 'error-msg';
+  el.className = type === 'success' ? 'success-msg' : type === 'info' ? 'info-msg' : 'error-msg';
 }
