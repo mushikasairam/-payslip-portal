@@ -28,17 +28,6 @@ const MONTHS = ['','January','February','March','April','May','June',
   const avatarEl = document.getElementById('userAvatar');
   if (avatarEl) avatarEl.textContent = name.charAt(0).toUpperCase();
 
-  // Profile modal on click
-  const userPill = document.getElementById('userPill');
-  if (userPill && !me.isAdmin) {
-    userPill.style.cursor = 'pointer';
-    userPill.addEventListener('click', openProfile);
-  }
-  document.getElementById('modalClose')?.addEventListener('click', closeProfile);
-  document.getElementById('profileModal')?.addEventListener('click', (e) => {
-    if (e.target === e.currentTarget) closeProfile();
-  });
-
   // Year dropdowns
   const currentYear = new Date().getFullYear();
   populateYears('yearSelect', currentYear);
@@ -256,29 +245,4 @@ async function loadPayslipList() {
 function showMsg(el, text, type) {
   el.textContent = text;
   el.className = type === 'success' ? 'success-msg' : type === 'info' ? 'info-msg' : 'error-msg';
-}
-
-// ── Profile modal ─────────────────────────────────────────────────────────────
-async function openProfile() {
-  const modal = document.getElementById('profileModal');
-  modal.classList.remove('hidden');
-  try {
-    const r    = await fetch('/api/profile');
-    const data = await r.json();
-    if (data.profile) {
-      const p = data.profile;
-      document.getElementById('modalName').textContent    = p.name || '—';
-      document.getElementById('modalEmail').textContent   = p.email || '—';
-      document.getElementById('modalAvatar').textContent  = (p.name || 'M').charAt(0).toUpperCase();
-      document.getElementById('pEmpCode').textContent     = p.employeeCode  || '—';
-      document.getElementById('pName').textContent        = p.name          || '—';
-      document.getElementById('pDesignation').textContent = p.designation   || '—';
-      document.getElementById('pDepartment').textContent  = p.department    || '—';
-      document.getElementById('pDoj').textContent         = p.dateOfJoining || '—';
-    }
-  } catch { /* ignore */ }
-}
-
-function closeProfile() {
-  document.getElementById('profileModal').classList.add('hidden');
 }

@@ -163,8 +163,8 @@ app.get('/api/payslip/view', requireLogin, async (req, res) => {
   if (!year || !month) return res.status(400).json({ error: 'year and month required' });
   const r = await findResource(year, month);
   if (!r) return res.status(404).send('Payslip not found');
-  const mm = String(month).padStart(2, '0');
-  proxyPdf(r.secure_url, `${year}-${mm}.pdf`, true, res);
+  // Direct redirect to public Cloudinary URL
+  res.redirect(r.secure_url);
 });
 
 app.get('/api/payslip/download', requireLogin, async (req, res) => {
@@ -173,7 +173,9 @@ app.get('/api/payslip/download', requireLogin, async (req, res) => {
   const r = await findResource(year, month);
   if (!r) return res.status(404).send('Payslip not found');
   const mm = String(month).padStart(2, '0');
-  proxyPdf(r.secure_url, `${year}-${mm}.pdf`, false, res);
+  // Use Cloudinary fl_attachment for forced download
+  const downloadUrl = r.secure_url.replace('/raw/upload/', '/raw/upload/fl_attachment/');
+  res.redirect(downloadUrl);
 });
 
 app.post('/api/admin/upload', requireAdmin, upload.single('pdf'), (req, res) => {
